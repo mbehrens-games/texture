@@ -18,6 +18,8 @@ enum
 {
   SOURCE_APPROX_NES = 0,
   SOURCE_APPROX_NES_ROTATED,
+  SOURCE_COMPOSITE_04_1X,
+  SOURCE_COMPOSITE_04_1X_ROTATED,
   SOURCE_COMPOSITE_08_2X,
   SOURCE_COMPOSITE_08_2p50X,
   SOURCE_COMPOSITE_16_1X,
@@ -30,6 +32,7 @@ enum
 
 /* the table step is 1 / (n + 2), where */
 /* n is the number of colors per hue    */
+#define COMPOSITE_04_TABLE_STEP 0.166666666666667f  /* 1/6  */
 #define COMPOSITE_08_TABLE_STEP 0.1f                /* 1/10 */
 #define COMPOSITE_16_TABLE_STEP 0.055555555555556f  /* 1/18 */
 #define COMPOSITE_32_TABLE_STEP 0.029411764705882f  /* 1/34 */
@@ -52,6 +55,9 @@ float S_nes_sat[4] = {0.1995f,  0.342f, 0.346f, 0.1425f};
 float S_approx_nes_p_p[4] = {0.4f, 0.7f,  0.7f,   0.3f};
 float S_approx_nes_lum[4] = {0.2f, 0.35f, 0.65f,  0.85f};
 float S_approx_nes_sat[4] = {0.2f, 0.35f, 0.35f,  0.15f};
+
+float S_composite_04_lum[4];
+float S_composite_04_sat[4];
 
 float S_composite_08_lum[8];
 float S_composite_08_sat[8];
@@ -103,6 +109,16 @@ short int generate_voltage_tables()
 {
   int k;
 
+  /* composite 04 tables */
+  for (k = 0; k < 2; k++)
+  {
+    S_composite_04_lum[k] = (k + 1) * COMPOSITE_04_TABLE_STEP;
+    S_composite_04_lum[3 - k] = 1.0f - S_composite_04_lum[k];
+
+    S_composite_04_sat[k] = S_composite_04_lum[k];
+    S_composite_04_sat[3 - k] = S_composite_04_sat[k];
+  }
+
   /* composite 08 tables */
   for (k = 0; k < 4; k++)
   {
@@ -146,6 +162,13 @@ short int set_voltage_table_pointers()
   {
     S_luma_table = S_approx_nes_lum;
     S_saturation_table = S_approx_nes_sat;
+    S_table_length = 4;
+  }
+  else if ( (G_source == SOURCE_COMPOSITE_04_1X) || 
+            (G_source == SOURCE_COMPOSITE_04_1X_ROTATED))
+  {
+    S_luma_table = S_composite_04_lum;
+    S_saturation_table = S_composite_04_sat;
     S_table_length = 4;
   }
   else if ( (G_source == SOURCE_COMPOSITE_08_2X) || 
@@ -394,6 +417,253 @@ short int generate_palette_approx_nes()
     for (n = 0; n < 12; n++)
       memcpy(&G_palette_data[4 * ((56 + m) * 64 + 4 * n + 7)], &G_palette_data[4 * ((56 + m) * 64 + 2)], 4 * 4);
   }
+
+  return 0;
+}
+
+/*******************************************************************************
+** generate_palette_64_color()
+*******************************************************************************/
+short int generate_palette_64_color()
+{
+  #define PALETTE_SIZE  64
+
+  #define TEXTURE_LEVELS_PER_PALETTE  (PALETTE_SIZE / 8)
+  #define TEXTURE_BASE_LEVEL          (TEXTURE_LEVELS_PER_PALETTE / 2)
+
+  int   num_hues;
+  int   hue_step;
+
+  int   num_gradients;
+  int   starting_theta;
+
+  int   num_shades;
+  int   shade_step;
+  int   rotation_step;
+
+  int   m;
+  int   n;
+  int   k;
+
+  int   p;
+
+  float y;
+  float i;
+  float q;
+
+  int   r;
+  int   g;
+  int   b;
+
+  int   index;
+
+  int   source_base_index;
+  int   dest_base_index;
+
+  /* initialize number of hues and shades */
+  if (G_source == SOURCE_COMPOSITE_04_1X)
+  {
+    num_hues = 12;
+    starting_theta = 0;
+    num_shades = 4;
+  }
+  else if (G_source == SOURCE_COMPOSITE_04_1X_ROTATED)
+  {
+    num_hues = 12;
+    starting_theta = 15;
+    num_shades = 4;
+  }
+  else
+  {
+    num_hues = 12;
+    starting_theta = 0;
+    num_shades = 4;
+  }
+
+  /* compute secondary variables */
+  hue_step = 360 / num_hues;
+  num_gradients = num_hues + 1;
+
+  shade_step = num_shades / TEXTURE_BASE_LEVEL;
+  rotation_step = num_hues / 6;
+
+  /* allocate palette data */
+  /*G_palette_data = malloc(sizeof(GLubyte) * 3 * PALETTE_SIZE * PALETTE_SIZE);*/
+  G_palette_data = malloc(sizeof(unsigned char) * 3 * PALETTE_SIZE * PALETTE_SIZE);
+
+  /* initialize palette data */
+  for (k = 0; k < PALETTE_SIZE * PALETTE_SIZE; k++)
+  {
+    TEXTURE_SET_PALETTE_DATA_AT_INDEX(k, 0, 0, 0)
+  }
+
+  /* initialize palette 0 */
+  for (m = TEXTURE_BASE_LEVEL; m < TEXTURE_LEVELS_PER_PALETTE; m++)
+  {
+    for (n = 0; n < num_gradients; n++)
+    {
+      for (k = 0; k < num_shades; k++)
+      {
+        index = m * PALETTE_SIZE + n * num_shades + k;
+        TEXTURE_SET_PALETTE_DATA_AT_INDEX(index, 255, 255, 255)
+      }
+    }
+  }
+
+  /* initialize palette 7 (inverted greyscale) */
+  for (m = 0; m < TEXTURE_BASE_LEVEL; m++)
+  {
+    for (n = 0; n < num_gradients; n++)
+    {
+      for (k = 0; k < num_shades; k++)
+      {
+        index = ((7 * TEXTURE_LEVELS_PER_PALETTE) + m) * PALETTE_SIZE + n * num_shades + k;
+        TEXTURE_SET_PALETTE_DATA_AT_INDEX(index, 255, 255, 255)
+      }
+    }
+  }
+
+  /* generate palette 0 */
+  for (n = 0; n < num_gradients; n++)
+  {
+    for (k = 0; k < num_shades; k++)
+    {
+      index = TEXTURE_BASE_LEVEL * PALETTE_SIZE + n * num_shades + k;
+
+      y = S_luma_table[k];
+
+      if (n == 0)
+      {
+        i = 0.0f;
+        q = 0.0f;
+      }
+      else
+      {
+        i = S_saturation_table[k] * cos(TWO_PI * ((n - 1) * hue_step + starting_theta) / 360.0f);
+        q = S_saturation_table[k] * sin(TWO_PI * ((n - 1) * hue_step + starting_theta) / 360.0f);
+      }
+
+      TEXTURE_YIQ2RGB()
+      TEXTURE_SET_PALETTE_DATA_AT_INDEX(index, r, g, b)
+    }
+  }
+
+  /* shadows for palette 0 */
+  for (m = 1; m < TEXTURE_BASE_LEVEL; m++)
+  {
+    source_base_index = TEXTURE_BASE_LEVEL * PALETTE_SIZE;
+    dest_base_index = m * PALETTE_SIZE;
+
+    for (n = 0; n < num_gradients; n++)
+    {
+      memcpy( &G_palette_data[3 * (dest_base_index + num_shades * n + (TEXTURE_BASE_LEVEL - m) * shade_step)], 
+              &G_palette_data[3 * (source_base_index + num_shades * n)], 
+              3 * m * shade_step);
+    }
+  }
+
+  /* highlights for palette 0 */
+  for (m = TEXTURE_BASE_LEVEL + 1; m < TEXTURE_LEVELS_PER_PALETTE; m++)
+  {
+    source_base_index = TEXTURE_BASE_LEVEL * PALETTE_SIZE;
+    dest_base_index = m * PALETTE_SIZE;
+
+    for (n = 0; n < num_gradients; n++)
+    {
+      memcpy( &G_palette_data[3 * (dest_base_index + num_shades * n)], 
+              &G_palette_data[3 * (source_base_index + num_shades * n + (m - TEXTURE_BASE_LEVEL) * shade_step)], 
+              3 * (TEXTURE_LEVELS_PER_PALETTE - m) * shade_step);
+    }
+  }
+
+  /* compute palette 7 (inverted greyscale) */
+  source_base_index = TEXTURE_BASE_LEVEL * PALETTE_SIZE;
+  dest_base_index = ((7 * TEXTURE_LEVELS_PER_PALETTE) + TEXTURE_BASE_LEVEL) * PALETTE_SIZE;
+
+  for (k = 0; k < num_shades; k++)
+  {
+    memcpy( &G_palette_data[3 * (dest_base_index + k)], 
+            &G_palette_data[3 * (source_base_index + (num_shades - 1 - k))], 
+            3);
+  }
+
+  for (n = 1; n < num_gradients; n++)
+  {
+    memcpy( &G_palette_data[3 * (dest_base_index + num_shades * n)], 
+            &G_palette_data[3 * (dest_base_index)], 
+            3 * num_shades);
+  }
+
+  /* shadows for palette 7 */
+  for (m = 1; m < TEXTURE_BASE_LEVEL; m++)
+  {
+    source_base_index = ((7 * TEXTURE_LEVELS_PER_PALETTE) + TEXTURE_BASE_LEVEL) * PALETTE_SIZE;
+    dest_base_index = ((7 * TEXTURE_LEVELS_PER_PALETTE) + m) * PALETTE_SIZE;
+
+    for (n = 0; n < num_gradients; n++)
+    {
+      memcpy( &G_palette_data[3 * (dest_base_index + num_shades * n + (TEXTURE_BASE_LEVEL - m) * shade_step)], 
+              &G_palette_data[3 * (source_base_index + num_shades * n)], 
+              3 * m * shade_step);
+    }
+  }
+
+  /* highlights for palette 7 */
+  for (m = TEXTURE_BASE_LEVEL + 1; m < TEXTURE_LEVELS_PER_PALETTE; m++)
+  {
+    source_base_index = ((7 * TEXTURE_LEVELS_PER_PALETTE) + TEXTURE_BASE_LEVEL) * PALETTE_SIZE;
+    dest_base_index = ((7 * TEXTURE_LEVELS_PER_PALETTE) + m) * PALETTE_SIZE;
+
+    for (n = 0; n < num_gradients; n++)
+    {
+      memcpy( &G_palette_data[3 * (dest_base_index + num_shades * n)], 
+              &G_palette_data[3 * (source_base_index + num_shades * n + (m - TEXTURE_BASE_LEVEL) * shade_step)], 
+              3 * (TEXTURE_LEVELS_PER_PALETTE - m) * shade_step);
+    }
+  }
+
+  /* palettes 1-5: rotations */
+  for (p = 1; p < 6; p++)
+  {
+    for (m = 0; m < TEXTURE_LEVELS_PER_PALETTE; m++)
+    {
+      source_base_index = m * PALETTE_SIZE;
+      dest_base_index = ((p * TEXTURE_LEVELS_PER_PALETTE) + m) * PALETTE_SIZE;
+
+      /* greys */
+      memcpy( &G_palette_data[3 * dest_base_index], 
+              &G_palette_data[3 * source_base_index], 
+              3 * num_shades);
+
+      /* rotated hues */
+      memcpy( &G_palette_data[3 * (dest_base_index + 1 * num_shades)], 
+              &G_palette_data[3 * (source_base_index + (1 + p * rotation_step) * num_shades)], 
+              3 * (6 - p) * rotation_step * num_shades);
+
+      memcpy( &G_palette_data[3 * (dest_base_index + (1 + (6 - p) * rotation_step) * num_shades)], 
+              &G_palette_data[3 * (source_base_index + num_shades)], 
+              3 * p * rotation_step * num_shades);
+    }
+  }
+
+  /* palette 6: greyscale */
+  for (m = 0; m < TEXTURE_LEVELS_PER_PALETTE; m++)
+  {
+    for (n = 0; n < num_gradients; n++)
+    {
+      source_base_index = m * PALETTE_SIZE;
+      dest_base_index = ((6 * TEXTURE_LEVELS_PER_PALETTE) + m) * PALETTE_SIZE;
+
+      memcpy( &G_palette_data[3 * (dest_base_index + (n * num_shades))], 
+              &G_palette_data[3 * (source_base_index + (0 * num_shades))], 
+              3 * num_shades);
+    }
+  }
+
+  #undef PALETTE_SIZE
+
+  #undef TEXTURE_LEVELS_PER_PALETTE
+  #undef TEXTURE_BASE_LEVEL
 
   return 0;
 }
@@ -1422,6 +1692,10 @@ int main(int argc, char *argv[])
         G_source = SOURCE_APPROX_NES;
       else if (!strcmp("approx_nes_rotated", argv[i]))
         G_source = SOURCE_APPROX_NES_ROTATED;
+      else if (!strcmp("composite_04_1x", argv[i]))
+        G_source = SOURCE_COMPOSITE_04_1X;
+      else if (!strcmp("composite_04_1x_rotated", argv[i]))
+        G_source = SOURCE_COMPOSITE_04_1X_ROTATED;
       else if (!strcmp("composite_08_2x", argv[i]))
         G_source = SOURCE_COMPOSITE_08_2X;
       else if (!strcmp("composite_08_2p50x", argv[i]))
@@ -1458,6 +1732,10 @@ int main(int argc, char *argv[])
     strncpy(output_tga_filename, "approx_nes.tga", 32);
   else if (G_source == SOURCE_APPROX_NES_ROTATED)
     strncpy(output_tga_filename, "approx_nes_rotated.tga", 32);
+  else if (G_source == SOURCE_COMPOSITE_04_1X)
+    strncpy(output_tga_filename, "composite_04_1x.tga", 32);
+  else if (G_source == SOURCE_COMPOSITE_04_1X_ROTATED)
+    strncpy(output_tga_filename, "composite_04_1x_rotated.tga", 32);
   else if (G_source == SOURCE_COMPOSITE_08_2X)
     strncpy(output_tga_filename, "composite_08_2x.tga", 32);
   else if (G_source == SOURCE_COMPOSITE_08_2p50X)
@@ -1481,8 +1759,10 @@ int main(int argc, char *argv[])
   }
 
   /* set palette size */
-  if ((G_source == SOURCE_APPROX_NES) || 
-      (G_source == SOURCE_APPROX_NES_ROTATED))
+  if ((G_source == SOURCE_APPROX_NES)         || 
+      (G_source == SOURCE_APPROX_NES_ROTATED) || 
+      (G_source == SOURCE_COMPOSITE_04_1X)    || 
+      (G_source == SOURCE_COMPOSITE_04_1X_ROTATED))
   {
     G_palette_size = 64;
   }
@@ -1518,6 +1798,15 @@ int main(int argc, char *argv[])
       (G_source == SOURCE_APPROX_NES_ROTATED))
   {
     if (generate_palette_approx_nes())
+    {
+      printf("Error generating texture. Exiting...\n");
+      return 0;
+    }
+  }
+  else if ( (G_source == SOURCE_COMPOSITE_04_1X) || 
+            (G_source == SOURCE_COMPOSITE_04_1X_ROTATED))
+  {
+    if (generate_palette_64_color())
     {
       printf("Error generating texture. Exiting...\n");
       return 0;
