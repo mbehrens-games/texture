@@ -56,11 +56,18 @@ enum
   SOURCE_COMPOSITE_32
 };
 
+#if 0
 /* the standard table step is 1 / (n + 2),  */
 /* where n is the number of colors per hue  */
 #define COMPOSITE_08_TABLE_STEP 0.1f                /* 1/10 */
 #define COMPOSITE_16_TABLE_STEP 0.055555555555556f  /* 1/18 */
 #define COMPOSITE_32_TABLE_STEP 0.029411764705882f  /* 1/34 */
+#endif
+
+/* the size of the table step is 1 / (n + 2), */
+/* where n is the number of colors per hue    */
+#define PALETTE_256_COLOR_TABLE_STEP  0.055555555555556f  /* 1/18 (n = 16) */
+#define PALETTE_1024_COLOR_TABLE_STEP 0.029411764705882f  /* 1/34 (n = 32) */
 
 /* the luma is the average of the low and high voltages */
 /* for the 1st half of each table, the low value is 0   */
@@ -109,7 +116,12 @@ short int generate_voltage_tables()
   /* composite 08 tables */
   for (k = 0; k < 4; k++)
   {
-    S_composite_08_lum[k] = (k + 1) * COMPOSITE_08_TABLE_STEP;
+    /* the table should include steps 1, 3, 6, and 8 */
+    if (k < 2)
+      S_composite_08_lum[k] = (2 * k + 1) * PALETTE_256_COLOR_TABLE_STEP;
+    else
+      S_composite_08_lum[k] = (2 * k + 2) * PALETTE_256_COLOR_TABLE_STEP;
+
     S_composite_08_lum[7 - k] = 1.0f - S_composite_08_lum[k];
 
     S_composite_08_sat[k] = S_composite_08_lum[k];
@@ -119,7 +131,7 @@ short int generate_voltage_tables()
   /* composite 16 tables */
   for (k = 0; k < 8; k++)
   {
-    S_composite_16_lum[k] = (k + 1) * COMPOSITE_16_TABLE_STEP;
+    S_composite_16_lum[k] = (k + 1) * PALETTE_256_COLOR_TABLE_STEP;
     S_composite_16_lum[15 - k] = 1.0f - S_composite_16_lum[k];
 
     S_composite_16_sat[k] = S_composite_16_lum[k];
@@ -129,7 +141,7 @@ short int generate_voltage_tables()
   /* composite 32 tables */
   for (k = 0; k < 16; k++)
   {
-    S_composite_32_lum[k] = (k + 1) * COMPOSITE_32_TABLE_STEP;
+    S_composite_32_lum[k] = (k + 1) * PALETTE_1024_COLOR_TABLE_STEP;
     S_composite_32_lum[31 - k] = 1.0f - S_composite_32_lum[k];
 
     S_composite_32_sat[k] = S_composite_32_lum[k];
